@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>RAG SQL Generator</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', sans-serif; background: #f5f5f5; padding: 2rem; }
+  .container { max-width: 700px; margin: auto; }
+  h1 { font-size: 1.5rem; margin-bottom: 0.25rem; color: #1a1a1a; }
+  p.sub { color: #666; font-size: 0.9rem; margin-bottom: 1.5rem; }
+  .card { background: white; border-radius: 10px; padding: 1.5rem; margin-bottom: 1rem; border: 1px solid #e0e0e0; }
+  label { font-size: 13px; color: #555; font-weight: 600; display: block; margin-bottom: 5px; }
+  input, textarea, select { width: 100%; padding: 9px 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px; margin-bottom: 12px; font-family: inherit; }
+  textarea { font-family: monospace; min-height: 80px; resize: vertical; }
+  button { width: 100%; background: #1a1a1a; color: white; border: none; padding: 12px; border-radius: 8px; font-size: 15px; cursor: pointer; }
+  button:hover { background: #333; }
+  button:disabled { background: #999; cursor: not-allowed; }
+  .result { background: #1e1e2e; color: #cdd6f4; font-family: monospace; font-size: 13px; padding: 1rem; border-radius: 8px; white-space: pre-wrap; line-height: 1.6; margin-top: 1rem; display: none; }
+  .error { color: #e24b4a; font-size: 13px; margin-top: 8px; display: none; }
+  .upload-area { border: 2px dashed #ddd; border-radius: 8px; padding: 1.5rem; text-align: center; cursor: pointer; color: #888; font-size: 14px; }
+  .upload-area.loaded { border-color: #22c55e; color: #16a34a; background: #f0fdf4; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>RAG SQL Generator</h1>
+  <p class="sub">Upload your SQL reference doc → generate adapted SQL for new clients</p>
+
+  <!-- Step 1: Upload -->
+  <div class="card">
+    <label>Step 1 — Upload your .docx file</label>
+    <div class="upload-area" id="uploadArea" onclick="document.getElementById('fileInput').click()">
+      Click to upload sample_queries.docx
+    </div>
+    <input type="file" id="fileInput" accept=".docx" style="display:none" onchange="uploadFile(this)">
+  </div>
+
+  <!-- Step 2: Generate -->
+  <div class="card">
+    <label>New client name</label>
+    <input type="text" id="newClient" placeholder="e.g. Coach">
+
+    <label>Reference client</label>
+    <input type="text" id="refClient" placeholder="e.g. Kate">
+
+    <label>Query type</label>
+    <select id="queryType">
+      <option>SKU Status</option>
+      <option>Revenue Summary</option>
+      <option>Top Sellers</option>
+    </select>
+
+    <label>Modifications</label>
+    <textarea id="modifications" placeholder="e.g. Change OLD tag to NOT_SOLD_5YRS for items not sold in last 5 years"></textarea>
+
+    <button onclick="generateSQL()" id="genBtn">Generate SQL</button>
+    <div class="error" id="errBox"></div>
+  </div>
+
+  <div class="result" id="resultBox"></div>
+</div>
+
+<script>
+  const API = "http://localhost:8000";  // change to your deployed URL
+
+  async function uploadFile(input) {
+    const file = input.files[0];
+    if (!file) return;
+    const form = new FormData();
+    form.append("file", file);
+    try {
+      const res = await fetch(`${API}/upload`, { method: "POST", body: form });
+      const data = await res.json();
+      document.getElementById("uploadArea").textContent = `Loaded ${data.documents_loaded || data.queries?.length} queries`;
+      document.getElementById("uploadArea").className = "upload-area loaded";
+    } catch(e) {
+      alert("Upload failed. Is the backend running?");
+    }
+  }
+
+  async function generateSQL() {
+    const btn = document.getElementById("genBtn");
+    const errBox = document.getElementById("errBox");
+    const resultBox = document.getElementById("resultBox");
+    errBox.style.display = "none";
+    resultBox.style.display = "none";
+    btn.disabled = true;
+    btn.textContent = "Generating...";
+
+    try {
+      const res = await fetch(`${API}/generate-sql`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          new_client:       document.getElementById("newClient").value,
+          reference_client: document.getElementById("refClient").value,
+          query_type:       document.getElementById("queryType").value,
+          modifications:    document.getElementById("modifications").value
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "Error");
+      resultBox.textContent = `-- Generated for: ${data.new_client} (based on ${data.reference_used})\n\n${data.generated_sql}`;
+      resultBox.style.display = "block";
+    } catch(e) {
+      errBox.textContent = e.message;
+      errBox.style.display = "block";
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "Generate SQL";
+    }
+  }
+</script>
+</body>
+</html>

@@ -1,0 +1,80 @@
+# ══════════════════════════════════════════════════════════
+# Kubernetes Deployment — RAG SQL Generator
+# ══════════════════════════════════════════════════════════
+#
+# Apply with:  kubectl apply -f k8s/deployment.yaml
+# Delete with: kubectl delete -f k8s/deployment.yaml
+#
+# Before applying:
+#   1. Push your Docker image: docker push yourdockerhub/rag-sql:latest
+#   2. Create secrets:
+#      kubectl create secret generic rag-secrets \
+#        --from-literal=GEMINI_API_KEY=your_key \
+#        --from-literal=GROQ_API_KEY=your_key
+# ══════════════════════════════════════════════════════════
+
+---
+# DEPLOYMENT — tells Kubernetes how to run your container
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rag-sql-backend
+  labels:
+    app: rag-sql
+spec:
+  replicas: 1          # number of pods (instances) to run
+  selector:
+    matchLabels:
+      app: rag-sql
+  template:
+    metadata:
+      labels:
+        app: rag-sql
+    spec:
+      containers:
+        - name: rag-sql-backend
+          image: yourdockerhub/rag-sql:latest   # ← replace with your image
+          ports:
+            - containerPort: 8000
+          env:
+            # Load API keys from Kubernetes secrets (not hardcoded)
+            - name: GEMINI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: rag-secrets
+                  key: GEMINI_API_KEY
+            - name: GROQ_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: rag-secrets
+                  key: GROQ_API_KEY
+          resources:
+            requests:
+              memory: "256Mi"   # minimum memory guaranteed
+              cpu: "250m"       # 250 millicores = 0.25 CPU
+            limits:
+              memory: "512Mi"   # maximum memory allowed
+              cpu: "500m"       # maximum CPU allowed
+          # Health check — Kubernetes restarts pod if this fails
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 30
+
+---
+# SERVICE — exposes your deployment to the outside world
+apiVersion: v1
+kind: Service
+metadata:
+  name: rag-sql-service
+spec:
+  selector:
+    app: rag-sql          # matches the deployment label
+  ports:
+    - protocol: TCP
+      port: 80            # external port (what users call)
+      targetPort: 8000    # internal port (your FastAPI app)
+  type: LoadBalancer      # creates a public IP (on cloud providers)
+                          # use NodePort for local Minikube testing

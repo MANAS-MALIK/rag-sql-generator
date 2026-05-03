@@ -1,0 +1,13 @@
+version: "3.9"
+
+services:
+  backend:
+    build: ./backend
+    ports:
+      - "8000:8000"         # host:container
+    environment:
+      - GEMINI_API_KEY=${GEMINI_API_KEY}   # loaded from .env file
+      - GROQ_API_KEY=${GROQ_API_KEY}
+    volumes:
+      - ./backend:/app      # hot reload during development
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
